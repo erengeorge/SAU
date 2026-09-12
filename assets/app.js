@@ -7,7 +7,6 @@ const TITLES = {
   visitors: "Visitor Log",
   confiscated: "Confiscated IDs",
   tasks: "Tasks",
-  settings: "Settings",
 };
 
 let state = {
@@ -63,6 +62,17 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function val(id) {
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : "";
+}
+
+function qsa(selector, clickHandler, eventName = "click", handler = null) {
+  document.querySelectorAll(selector).forEach((el) => {
+    el.addEventListener(eventName, () => (handler || clickHandler)(el));
+  });
+}
+
 async function loadAll() {
   const res = await api("get_all");
   state = res.data;
@@ -76,19 +86,15 @@ function setActiveTab(tab) {
   document.querySelectorAll(".nav-item").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
   });
-  document.getElementById("sidebar").classList.remove("open");
   render();
 }
 
 document.querySelectorAll(".nav-item").forEach((btn) => {
   btn.addEventListener("click", () => setActiveTab(btn.dataset.tab));
 });
-document.getElementById("menu-toggle").addEventListener("click", () => {
-  document.getElementById("sidebar").classList.toggle("open");
-});
 
 function render() {
-  const main = document.getElementById("app-main");
+  const main = document.getElementById("panel-container");
   const panel = document.createElement("div");
   panel.className = "panel";
 
@@ -101,12 +107,26 @@ function render() {
     visitors: renderVisitors,
     confiscated: renderConfiscated,
     tasks: renderTasks,
-    settings: renderSettings,
   };
   panel.innerHTML = renderers[activeTab]();
   main.innerHTML = "";
   main.appendChild(panel);
   attachHandlers();
+}
+
+function getDeptColor(name) {
+  const d = state.departments.find((d) => d.name === name);
+  return d ? d.color : "#e8479d";
+}
+
+function getContrastColor(hex) {
+  if (!hex) return "#ffffff";
+  const c = hex.replace("#", "");
+  const r = parseInt(c.substr(0, 2), 16),
+    g = parseInt(c.substr(2, 2), 16),
+    b = parseInt(c.substr(4, 2), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? "#2a2429" : "#ffffff";
 }
 
 // ---------------- OVERVIEW ----------------
@@ -151,7 +171,7 @@ function renderOverview() {
         </div></li>`,
               )
               .join("")}</ul>`
-          : `<div class="empty">All caught up — no pending requirements.</div>`
+          : `<div class="empty">All caught up, no pending requirements.</div>`
       }
     </div>
   `;
@@ -163,15 +183,27 @@ function renderComplaints() {
   return `
     <div class="card">
       <h2>Log a complaint or request</h2>
-      <form id="complaint-form">
-        <input type="text" id="c-name" placeholder="Student name" required>
-        <input type="text" id="c-course" placeholder="Course/Year (optional)">
-        <select id="c-type">
-          <option value="Complaint">Complaint</option>
-          <option value="Request">Request</option>
-        </select>
-        <textarea id="c-desc" placeholder="Details" required></textarea>
-        <button type="submit" class="btn">Add</button>
+      <form id="complaint-form" class="form-grid">
+        <div class="field">
+          <label for="c-name">Student name</label>
+          <input type="text" id="c-name" required>
+        </div>
+        <div class="field">
+          <label for="c-course">Course/Year</label>
+          <input type="text" id="c-course" placeholder="Optional">
+        </div>
+        <div class="field">
+          <label for="c-type">Type</label>
+          <select id="c-type">
+            <option value="Complaint">Complaint</option>
+            <option value="Request">Request</option>
+          </select>
+        </div>
+        <div class="field field-full">
+          <label for="c-desc">Details</label>
+          <textarea id="c-desc" required></textarea>
+        </div>
+        <div class="form-actions"><button type="submit" class="btn">Add entry</button></div>
       </form>
     </div>
     <div class="card">
@@ -184,7 +216,7 @@ function renderComplaints() {
         <li>
           <div class="item-main">
             <span class="badge badge-${c.status === "done" ? "done" : c.status === "progress" ? "progress" : "open"}">${c.status === "done" ? "Resolved" : c.status === "progress" ? "In progress" : "Open"}</span>
-            <span class="item-title">${escapeHtml(c.type)} &ndash; ${escapeHtml(c.name)}</span>
+            <span class="item-title">${escapeHtml(c.type)}, ${escapeHtml(c.name)}</span>
             <div class="item-meta">${escapeHtml(c.course || "")} &middot; ${c.date_added}</div>
             <div class="item-desc">${escapeHtml(c.description)}</div>
           </div>
@@ -211,16 +243,31 @@ function renderDocuments() {
   return `
     <div class="card">
       <h2>Log a paper</h2>
-      <form id="document-form">
-        <select id="doc-direction">
-          <option value="incoming">Incoming</option>
-          <option value="outgoing">Outgoing</option>
-        </select>
-        <input type="text" id="doc-tracking" placeholder="Tracking / reference no. (optional)">
-        <input type="text" id="doc-subject" placeholder="Subject / title" required style="width:100%;">
-        <input type="text" id="doc-party" placeholder="From (incoming) or To (outgoing)">
-        <textarea id="doc-notes" placeholder="Notes (optional)"></textarea>
-        <button type="submit" class="btn">Add</button>
+      <form id="document-form" class="form-grid">
+        <div class="field">
+          <label for="doc-direction">Direction</label>
+          <select id="doc-direction">
+            <option value="incoming">Incoming</option>
+            <option value="outgoing">Outgoing</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="doc-tracking">Tracking / reference no.</label>
+          <input type="text" id="doc-tracking" placeholder="Optional">
+        </div>
+        <div class="field">
+          <label for="doc-party">From / To</label>
+          <input type="text" id="doc-party" placeholder="Who it's from or to">
+        </div>
+        <div class="field field-full">
+          <label for="doc-subject">Subject / title</label>
+          <input type="text" id="doc-subject" required>
+        </div>
+        <div class="field field-full">
+          <label for="doc-notes">Notes</label>
+          <textarea id="doc-notes" placeholder="Optional"></textarea>
+        </div>
+        <div class="form-actions"><button type="submit" class="btn">Add entry</button></div>
       </form>
     </div>
     <div class="card">
@@ -263,20 +310,33 @@ function renderDepartments() {
   return `
     <div class="card">
       <h2>Add a department activity</h2>
-      ${depts.length ? "" : `<div class="empty" style="text-align:left;padding:0 0 12px;">No departments set up yet — add them in <strong>Settings</strong> first.</div>`}
-      <form id="activity-form">
-        <select id="d-dept" required ${depts.length ? "" : "disabled"}>
-          <option value="" disabled selected>Select department</option>
-          ${depts.map((d) => `<option value="${escapeHtml(d.name)}">${escapeHtml(d.name)}</option>`).join("")}
-        </select>
-        <input type="text" id="d-name" placeholder="Activity name" required>
-        <input type="date" id="d-date">
-        <textarea id="d-notes" placeholder="Notes (optional)"></textarea>
-        <div style="width:100%;">
-          <input type="text" id="d-reqs" placeholder="Requirements, comma-separated (e.g. Activity proposal, Budget request, Attendance sheet)" style="width:100%;">
-          <div class="chip-hint">Separate each requirement with a comma — you can add more later.</div>
+      ${depts.length ? "" : `<div class="empty" style="text-align:left;padding:0 0 14px;">No departments set up yet. Use the settings icon (top right) to add one first.</div>`}
+      <form id="activity-form" class="form-grid">
+        <div class="field">
+          <label for="d-dept">Department</label>
+          <select id="d-dept" required ${depts.length ? "" : "disabled"}>
+            <option value="" disabled selected>Select department</option>
+            ${depts.map((d) => `<option value="${escapeHtml(d.name)}">${escapeHtml(d.name)}</option>`).join("")}
+          </select>
         </div>
-        <button type="submit" class="btn" ${depts.length ? "" : "disabled"}>Add activity</button>
+        <div class="field">
+          <label for="d-name">Activity name</label>
+          <input type="text" id="d-name" required>
+        </div>
+        <div class="field">
+          <label for="d-date">Date</label>
+          <input type="date" id="d-date">
+        </div>
+        <div class="field field-full">
+          <label for="d-notes">Notes</label>
+          <textarea id="d-notes" placeholder="Optional"></textarea>
+        </div>
+        <div class="field field-full">
+          <label for="d-reqs">Requirements</label>
+          <input type="text" id="d-reqs" placeholder="Comma-separated, e.g. Activity proposal, Budget request, Attendance sheet">
+          <div class="field-hint">Separate each requirement with a comma. You can add more later.</div>
+        </div>
+        <div class="form-actions"><button type="submit" class="btn" ${depts.length ? "" : "disabled"}>Add activity</button></div>
       </form>
     </div>
 
@@ -285,21 +345,6 @@ function renderDepartments() {
       ${items.length ? items.map((a) => renderActivityCard(a)).join("") : `<div class="empty">No department activities logged yet.</div>`}
     </div>
   `;
-}
-
-function getDeptColor(name) {
-  const d = state.departments.find((d) => d.name === name);
-  return d ? d.color : "#1f6f5c";
-}
-
-function getContrastColor(hex) {
-  if (!hex) return "#ffffff";
-  const c = hex.replace("#", "");
-  const r = parseInt(c.substr(0, 2), 16),
-    g = parseInt(c.substr(2, 2), 16),
-    b = parseInt(c.substr(4, 2), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.6 ? "#1c2321" : "#ffffff";
 }
 
 function renderActivityCard(a) {
@@ -344,7 +389,7 @@ function renderActivityCard(a) {
           <input type="text" placeholder="Add a requirement" data-new-req="${a.id}">
           <button class="btn-outline" data-action="add-req" data-id="${a.id}">Add</button>
         </div>
-        <div style="margin-top:10px;">
+        <div style="margin-top:12px;">
           <button class="btn-ghost" data-action="delete-activity" data-id="${a.id}">Delete this activity</button>
         </div>
       </div>
@@ -357,18 +402,35 @@ function renderRecords() {
   return `
     <div class="card">
       <h2>Add student record</h2>
-      <form id="record-form">
-        <input type="text" id="r-name" placeholder="Full name" required>
-        <input type="text" id="r-id" placeholder="Student ID">
-        <input type="text" id="r-course" placeholder="Course & Year">
-        <input type="text" id="r-contact" placeholder="Contact number/email">
-        <textarea id="r-notes" placeholder="Notes"></textarea>
-        <button type="submit" class="btn">Add</button>
+      <form id="record-form" class="form-grid">
+        <div class="field">
+          <label for="r-name">Full name</label>
+          <input type="text" id="r-name" required>
+        </div>
+        <div class="field">
+          <label for="r-id">Student ID</label>
+          <input type="text" id="r-id">
+        </div>
+        <div class="field">
+          <label for="r-course">Course &amp; Year</label>
+          <input type="text" id="r-course">
+        </div>
+        <div class="field">
+          <label for="r-contact">Contact</label>
+          <input type="text" id="r-contact" placeholder="Number or email">
+        </div>
+        <div class="field field-full">
+          <label for="r-notes">Notes</label>
+          <textarea id="r-notes" placeholder="Optional"></textarea>
+        </div>
+        <div class="form-actions"><button type="submit" class="btn">Add record</button></div>
       </form>
     </div>
     <div class="card">
       <h2>Search records</h2>
-      <input type="text" id="record-search" placeholder="Search by name or ID" style="width:100%;margin-bottom:14px;">
+      <div class="field" style="margin-bottom:14px;">
+        <input type="text" id="record-search" placeholder="Search by name or ID">
+      </div>
       <ul class="list" id="records-list"></ul>
     </div>
   `;
@@ -420,11 +482,20 @@ function renderVisitors() {
   return `
     <div class="card">
       <h2>Log a walk-in visitor</h2>
-      <form id="visitor-form">
-        <input type="text" id="v-name" placeholder="Visitor name" required>
-        <input type="text" id="v-purpose" placeholder="Purpose of visit" required>
-        <input type="time" id="v-time">
-        <button type="submit" class="btn">Add</button>
+      <form id="visitor-form" class="form-grid">
+        <div class="field">
+          <label for="v-name">Visitor name</label>
+          <input type="text" id="v-name" required>
+        </div>
+        <div class="field">
+          <label for="v-purpose">Purpose of visit</label>
+          <input type="text" id="v-purpose" required>
+        </div>
+        <div class="field">
+          <label for="v-time">Time</label>
+          <input type="time" id="v-time">
+        </div>
+        <div class="form-actions"><button type="submit" class="btn">Add entry</button></div>
       </form>
     </div>
     <div class="card">
@@ -460,11 +531,20 @@ function renderConfiscated() {
   return `
     <div class="card">
       <h2>Log a confiscated ID</h2>
-      <form id="confiscated-form">
-        <input type="text" id="ci-name" placeholder="Student name" required>
-        <input type="text" id="ci-id" placeholder="Student ID no. (optional)">
-        <input type="text" id="ci-reason" placeholder="Reason confiscated" required style="width:100%;">
-        <button type="submit" class="btn">Add</button>
+      <form id="confiscated-form" class="form-grid">
+        <div class="field">
+          <label for="ci-name">Student name</label>
+          <input type="text" id="ci-name" required>
+        </div>
+        <div class="field">
+          <label for="ci-id">Student ID no.</label>
+          <input type="text" id="ci-id" placeholder="Optional">
+        </div>
+        <div class="field field-full">
+          <label for="ci-reason">Reason confiscated</label>
+          <input type="text" id="ci-reason" required>
+        </div>
+        <div class="form-actions"><button type="submit" class="btn">Add entry</button></div>
       </form>
     </div>
     <div class="card">
@@ -504,7 +584,7 @@ function renderConfiscated() {
             <span class="item-title">${escapeHtml(c.student_name)}${c.student_id_no ? " (" + escapeHtml(c.student_id_no) + ")" : ""}</span>
             <div class="item-meta">Confiscated ${c.date_confiscated} &middot; Released ${c.date_released || ""}</div>
             <div class="item-desc">${escapeHtml(c.reason)}</div>
-            ${c.released_by || c.release_reason ? `<div class="item-desc">Released by ${escapeHtml(c.released_by || "—")}${c.release_reason ? ": " + escapeHtml(c.release_reason) : ""}</div>` : ""}
+            ${c.released_by || c.release_reason ? `<div class="item-desc">Released by ${escapeHtml(c.released_by || "unspecified")}${c.release_reason ? ": " + escapeHtml(c.release_reason) : ""}</div>` : ""}
           </div>
           <div class="actions">
             <button class="btn-outline" data-action="delete-confiscated" data-id="${c.id}">Delete</button>
@@ -517,16 +597,23 @@ function renderConfiscated() {
     </div>
   `;
 }
+
 // ---------------- TASKS ----------------
 function renderTasks() {
   const items = [...state.tasks];
   return `
     <div class="card">
       <h2>Add task</h2>
-      <form id="task-form">
-        <input type="text" id="t-title" placeholder="Task" required>
-        <input type="date" id="t-due">
-        <button type="submit" class="btn">Add</button>
+      <form id="task-form" class="form-grid">
+        <div class="field">
+          <label for="t-title">Task</label>
+          <input type="text" id="t-title" required>
+        </div>
+        <div class="field">
+          <label for="t-due">Due date</label>
+          <input type="date" id="t-due">
+        </div>
+        <div class="form-actions"><button type="submit" class="btn">Add task</button></div>
       </form>
     </div>
     <div class="card">
@@ -556,20 +643,22 @@ function renderTasks() {
   `;
 }
 
-// ---------------- SETTINGS ----------------
-function renderSettings() {
+// ---------------- SETTINGS (modal, opened from gear icon) ----------------
+function renderSettingsContent() {
   const depts = [...state.departments];
   return `
-    <div class="card">
-      <h2>Add a department</h2>
-      <form id="dept-form">
-        <input type="text" id="dept-name" placeholder="Department name (e.g. CCS, CBA, CON)" required>
-        <input type="color" id="dept-color" value="#1f6f5c" title="Pick a color">
-        <button type="submit" class="btn">Add department</button>
-      </form>
-    </div>
-    <div class="card">
-      <h2>Departments (${depts.length})</h2>
+    <form id="dept-form" class="form-grid" style="margin-bottom:20px;">
+      <div class="field field-full">
+        <label for="dept-name">Department name</label>
+        <input type="text" id="dept-name" placeholder="e.g. CCS, CBA, CON" required>
+      </div>
+      <div class="field">
+        <label for="dept-color">Color</label>
+        <input type="color" id="dept-color" value="#e8479d">
+      </div>
+      <div class="form-actions"><button type="submit" class="btn">Add department</button></div>
+    </form>
+    <div>
       ${
         depts.length
           ? depts
@@ -589,6 +678,77 @@ function renderSettings() {
     </div>
   `;
 }
+
+function openSettingsModal() {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal-box wide">
+      <div class="modal-box-head">
+        <h3>Departments</h3>
+        <button type="button" class="modal-close" id="settings-close" aria-label="Close">&times;</button>
+      </div>
+      <div id="settings-body"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  function refresh() {
+    document.getElementById("settings-body").innerHTML =
+      renderSettingsContent();
+    attachSettingsHandlers();
+  }
+
+  function attachSettingsHandlers() {
+    const deptf = document.getElementById("dept-form");
+    if (deptf)
+      deptf.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await api("add_department", {
+          name: val("dept-name"),
+          color: document.getElementById("dept-color").value,
+        });
+        await loadAll();
+        refresh();
+        showToast("Department added.");
+      });
+    qsa('[data-action="dept-color"]', null, "change", async (input) => {
+      const dept = state.departments.find(
+        (d) => String(d.id) === input.dataset.id,
+      );
+      if (!dept) return;
+      await api("update_department", {
+        id: input.dataset.id,
+        name: dept.name,
+        color: input.value,
+      });
+      await loadAll();
+      refresh();
+      if (activeTab === "departments") render();
+      showToast("Color updated.");
+    });
+    qsa('[data-action="delete-dept"]', async (b) => {
+      await api("delete_department", { id: b.dataset.id });
+      await loadAll();
+      refresh();
+      if (activeTab === "departments") render();
+      showToast("Department removed.");
+    });
+  }
+
+  refresh();
+
+  document
+    .getElementById("settings-close")
+    .addEventListener("click", () => overlay.remove());
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+}
+
+document
+  .getElementById("settings-btn")
+  .addEventListener("click", openSettingsModal);
 
 // ---------------- EVENT HANDLERS ----------------
 function attachHandlers() {
@@ -651,39 +811,6 @@ function attachHandlers() {
     await loadAll();
     setActiveTab("documents");
     showToast("Entry deleted.");
-  });
-
-  const deptf = document.getElementById("dept-form");
-  if (deptf)
-    deptf.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      await api("add_department", {
-        name: val("dept-name"),
-        color: document.getElementById("dept-color").value,
-      });
-      await loadAll();
-      setActiveTab("settings");
-      showToast("Department added.");
-    });
-  qsa('[data-action="dept-color"]', null, "change", async (input) => {
-    const dept = state.departments.find(
-      (d) => String(d.id) === input.dataset.id,
-    );
-    if (!dept) return;
-    await api("update_department", {
-      id: input.dataset.id,
-      name: dept.name,
-      color: input.value,
-    });
-    await loadAll();
-    setActiveTab("settings");
-    showToast("Color updated.");
-  });
-  qsa('[data-action="delete-dept"]', async (b) => {
-    await api("delete_department", { id: b.dataset.id });
-    await loadAll();
-    setActiveTab("settings");
-    showToast("Department removed.");
   });
 
   const df = document.getElementById("activity-form");
@@ -837,28 +964,24 @@ function attachHandlers() {
   });
 }
 
-function val(id) {
-  const el = document.getElementById(id);
-  return el ? el.value.trim() : "";
-}
-
-function qsa(selector, clickHandler, eventName = "click", handler = null) {
-  document.querySelectorAll(selector).forEach((el) => {
-    el.addEventListener(eventName, () => (handler || clickHandler)(el));
-  });
-}
-
-loadAll();
-
 function openReleaseDialog(id) {
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
     <div class="modal-box">
-      <h3>Release ID</h3>
-      <form id="release-form">
-        <input type="text" id="rel-by" placeholder="Released by (your name)" required style="width:100%;">
-        <input type="text" id="rel-reason" placeholder="Reason for release" required style="width:100%;">
+      <div class="modal-box-head">
+        <h3>Release ID</h3>
+        <button type="button" class="modal-close" id="rel-close" aria-label="Close">&times;</button>
+      </div>
+      <form id="release-form" class="form-grid">
+        <div class="field field-full">
+          <label for="rel-by">Released by</label>
+          <input type="text" id="rel-by" placeholder="Your name" required>
+        </div>
+        <div class="field field-full">
+          <label for="rel-reason">Reason for release</label>
+          <input type="text" id="rel-reason" required>
+        </div>
         <div class="modal-actions">
           <button type="button" class="btn-outline" id="rel-cancel">Cancel</button>
           <button type="submit" class="btn">Release</button>
@@ -867,11 +990,11 @@ function openReleaseDialog(id) {
     </div>
   `;
   document.body.appendChild(overlay);
-  document
-    .getElementById("rel-cancel")
-    .addEventListener("click", () => overlay.remove());
+  const close = () => overlay.remove();
+  document.getElementById("rel-close").addEventListener("click", close);
+  document.getElementById("rel-cancel").addEventListener("click", close);
   overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) close();
   });
   document
     .getElementById("release-form")
@@ -948,4 +1071,5 @@ function setupSearch() {
   }
 }
 
+loadAll();
 setupSearch();
